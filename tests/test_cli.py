@@ -15,6 +15,8 @@ def test_google_help_shows_command_groups():
     assert "auth" in result.output
     assert "gmail" in result.output
     assert "calendar" in result.output
+    assert "docs" in result.output
+    assert "sheets" in result.output
 
 
 def test_gmail_inbox_without_account_shows_error():
@@ -82,3 +84,39 @@ def test_cli_loads_config_and_passes_it_through(monkeypatch):
 
     assert result.exit_code == 0
     assert seen == {"account": "personal", "config": config}
+
+
+def test_docs_help_shows_subcommands():
+    runner = CliRunner()
+
+    result = runner.invoke(cli_module.cli, ["docs", "--help"])
+
+    assert result.exit_code == 0
+    assert "list" in result.output
+    assert "read" in result.output
+    assert "search" in result.output
+    assert "create" in result.output
+    assert "update" in result.output
+
+
+def test_sheets_help_shows_subcommands():
+    runner = CliRunner()
+
+    result = runner.invoke(cli_module.cli, ["sheets", "--help"])
+
+    assert result.exit_code == 0
+    assert "list" in result.output
+    assert "read" in result.output
+    assert "search" in result.output
+    assert "create" in result.output
+    assert "update" in result.output
+
+
+def test_docs_update_requires_exactly_one_mode(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+
+    result = runner.invoke(cli_module.cli, ["docs", "update", "--account", "personal", "doc-1"])
+
+    assert result.exit_code != 0
+    assert "Specify exactly one of --replace or --append" in result.output

@@ -2,7 +2,11 @@ import base64
 from email.mime.text import MIMEText
 
 import click
-from googleapiclient.discovery import build
+
+try:
+    from googleapiclient.discovery import build
+except ImportError:  # pragma: no cover - exercised only in dependency-light test envs
+    build = None
 
 from src.audit import log_mutation
 from src.auth import get_credentials
@@ -12,6 +16,8 @@ from src.sanitizer import sanitize
 
 
 def _gmail_service(account: str, config: AppConfig):
+    if build is None:
+        raise click.ClickException("google-api-python-client is not installed")
     return build("gmail", "v1", credentials=get_credentials(account, config))
 
 

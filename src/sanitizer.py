@@ -1,6 +1,5 @@
 import re
-
-from bs4 import BeautifulSoup
+from html.parser import HTMLParser
 
 
 ROLE_PREFIXES = ("SYSTEM", "USER", "ASSISTANT", "HUMAN", "CLAUDE")
@@ -14,9 +13,29 @@ SPECIAL_TOKENS = {
 }
 
 
+class _HTMLStripper(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag in {"p", "br", "div", "li", "tr"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"p", "br", "div", "li", "tr"}:
+            self.parts.append("\n")
+
+
 def strip_html_tags(content: str) -> str:
-    soup = BeautifulSoup(content, "html.parser")
-    return soup.get_text("\n")
+    parser = _HTMLStripper()
+    parser.feed(content)
+    text = "".join(parser.parts)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def neutralize_injections(content: str) -> str:
