@@ -9,7 +9,7 @@ Claude Code plugin for safe multi-account Google access across Gmail, Calendar, 
 ## Features
 
 - Gmail: read inbox, search messages, inspect threads, list labels, and create drafts
-- Calendar: list today's events, search upcoming events, create/update/delete events
+- Calendar: list events, query shared calendars, create/update/delete events, and compute cross-account availability
 - Docs: list recent docs, search metadata, read sanitized text, create docs, and replace or append plain text
 - Sheets: list recent sheets, search metadata, read sanitized cell ranges, create spreadsheets, and update ranges
 
@@ -60,7 +60,7 @@ uv sync
 uv run google auth login personal
 ```
 
-If you authenticated before Docs and Sheets scopes were added, run `google auth login <alias>` again so Google can grant the new scopes.
+If you authenticated before Docs, Sheets, or Calendar read scopes were added, run `google auth login <alias>` again so Google can grant the new scopes.
 
 6. Install as a Claude Code plugin by adding the repo path to `~/.claude/settings.json` or your project-specific Claude settings.
 
@@ -73,6 +73,9 @@ uv run google auth list
 uv run google gmail inbox --account personal --limit 5
 uv run google gmail draft --account personal you@example.com --subject "Hello" --body "Draft body"
 uv run google calendar today --account personal
+uv run google calendar free-busy --accounts personal,work --date 2026-03-07
+uv run google calendar overlap --accounts personal,work --date 2026-03-07 --min-duration 60
+uv run google calendar today --account personal --calendar family
 uv run google calendar create --account personal "Planning" --start "2026-03-01T10:00:00Z" --end "2026-03-01T11:00:00Z"
 uv run google docs list --account personal --limit 10
 uv run google docs read --account personal <doc-id>

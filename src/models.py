@@ -30,6 +30,30 @@ class CalendarEvent(BaseModel):
     html_link: str = ""
 
 
+class CalendarWindow(BaseModel):
+    start: str
+    end: str
+
+
+class AccountFreeBusy(BaseModel):
+    account: str
+    busy: list[CalendarWindow]
+
+
+class CalendarFreeBusyResult(BaseModel):
+    date: str
+    accounts: list[AccountFreeBusy]
+    merged_busy: list[CalendarWindow]
+    merged_free: list[CalendarWindow]
+
+
+class CalendarOverlapResult(BaseModel):
+    date: str
+    accounts: list[str]
+    min_duration_minutes: int
+    windows: list[CalendarWindow]
+
+
 class Label(BaseModel):
     id: str
     name: str

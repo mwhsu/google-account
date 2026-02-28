@@ -3,11 +3,16 @@
   "client_secret": "YOUR_GOOGLE_CLOUD_CLIENT_SECRET",
   "accounts": {
     "personal": {
-      "description": "Personal Google account"
+      "description": "Personal Google account",
+      "calendar_id": "personal@example.com"
     },
     "work": {
-      "description": "Work Google Workspace"
+      "description": "Work Google Workspace",
+      "calendar_id": "work@example.com"
     }
+  },
+  "calendars": {
+    "family": "family-calendar-id@group.calendar.google.com"
   },
   "sanitization": {
     "max_email_body_chars": 2000,

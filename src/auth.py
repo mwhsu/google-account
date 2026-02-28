@@ -30,6 +30,7 @@ from src.config import AppConfig, get_account
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/spreadsheets",
