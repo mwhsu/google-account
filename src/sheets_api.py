@@ -9,7 +9,7 @@ from src.audit import log_mutation
 from src.auth import get_credentials
 from src.config import AppConfig
 from src.models import SheetInfo, SheetRange
-from src.sanitizer import sanitize
+from src.sanitizer import neutralize_injections, sanitize, strip_html_tags
 
 
 SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
@@ -32,6 +32,10 @@ def _drive_sheet_query(extra_query: str | None = None) -> str:
     if extra_query:
         query = f"{query} and ({extra_query})"
     return query
+
+
+def _escape_drive_query_literal(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
 def _file_to_sheet_info(file_data: dict) -> SheetInfo:
@@ -64,21 +68,27 @@ def _sanitize_values(values: list[list[object]], config: AppConfig) -> list[list
     bounded = _bounded_values(string_values, config.sanitization.max_sheet_cells)
     return [
         [
-            sanitize(
-                value,
-                "SHEET_RANGE",
-                config.sanitization.max_doc_chars,
-                strip_html=config.sanitization.strip_html,
-                neutralize=config.sanitization.neutralize_injections,
-            )
+            _sanitize_cell(value, config)
             for value in row
         ]
         for row in bounded
     ]
 
 
+def _sanitize_cell(value: str, config: AppConfig) -> str:
+    sanitized = value
+    if config.sanitization.strip_html:
+        sanitized = strip_html_tags(sanitized)
+    if config.sanitization.neutralize_injections:
+        sanitized = neutralize_injections(sanitized)
+    return sanitized
+
+
 def format_sheet_table(sheet_range: SheetRange) -> str:
-    rows = sheet_range.sanitized_values
+    return sheet_range.sanitized_range
+
+
+def _render_table(rows: list[list[str]]) -> str:
     if not rows:
         return "(empty)"
     widths = [max(len(row[index]) for row in rows if index < len(row)) for index in range(max(len(row) for row in rows))]
@@ -107,10 +117,18 @@ def list_sheets(account: str, config: AppConfig, limit: int) -> list[SheetInfo]:
 def read_sheet(account: str, config: AppConfig, sheet_id: str, range_name: str = "Sheet1") -> SheetRange:
     service = _sheets_service(account, config)
     response = service.spreadsheets().values().get(spreadsheetId=sheet_id, range=range_name).execute()
+    sanitized_values = _sanitize_values(response.get("values", []), config)
     return SheetRange(
         spreadsheet_id=sheet_id,
         range=response.get("range", range_name),
-        sanitized_values=_sanitize_values(response.get("values", []), config),
+        sanitized_range=sanitize(
+            _render_table(sanitized_values),
+            "SHEET_RANGE",
+            config.sanitization.max_doc_chars,
+            strip_html=False,
+            neutralize=False,
+        ),
+        sanitized_values=sanitized_values,
     )
 
 
@@ -119,7 +137,7 @@ def search_sheets(account: str, config: AppConfig, query: str, limit: int) -> li
     response = (
         service.files()
         .list(
-            q=_drive_sheet_query(f"name contains '{query}'"),
+            q=_drive_sheet_query(f"name contains '{_escape_drive_query_literal(query)}'"),
             pageSize=limit,
             orderBy="modifiedTime desc",
             fields="files(id,name,modifiedTime)",
@@ -139,7 +157,7 @@ def create_sheet(account: str, config: AppConfig, title: str, rows: int, cols: i
         response = service.spreadsheets().create(body=body).execute()
     except Exception as exc:
         request_id = log_mutation(
-            "sheets.create_sheet",
+            "sheets.create",
             account,
             "sheet",
             "unknown",
@@ -151,7 +169,7 @@ def create_sheet(account: str, config: AppConfig, title: str, rows: int, cols: i
         raise click.ClickException(f"Failed to create sheet | audit: {request_id}") from exc
     sheet_id = response["spreadsheetId"]
     request_id = log_mutation(
-        "sheets.create_sheet",
+        "sheets.create",
         account,
         "sheet",
         sheet_id,
@@ -179,7 +197,7 @@ def update_sheet(
         ).execute()
     except Exception as exc:
         request_id = log_mutation(
-            "sheets.update_sheet",
+            "sheets.update",
             account,
             "sheet",
             sheet_id,
@@ -190,7 +208,7 @@ def update_sheet(
         )
         raise click.ClickException(f"Failed to update sheet | audit: {request_id}") from exc
     request_id = log_mutation(
-        "sheets.update_sheet",
+        "sheets.update",
         account,
         "sheet",
         sheet_id,

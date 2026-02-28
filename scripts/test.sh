@@ -16,7 +16,7 @@ run_pytest() {
 
 case "$suite" in
   all)
-    if uv run pytest tests/ -v; then
+    if uv run --extra dev python -m pytest tests/ -v; then
       exit 0
     fi
     if [ -x .venv/bin/python ]; then
@@ -27,7 +27,7 @@ case "$suite" in
     exit 1
     ;;
   *)
-    if uv run pytest "$suite" -v; then
+    if uv run --extra dev python -m pytest "$suite" -v; then
       exit 0
     fi
     if [ -x .venv/bin/python ]; then

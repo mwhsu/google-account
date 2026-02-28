@@ -146,6 +146,21 @@ def test_search_docs_passes_query_to_drive_api(tmp_path, monkeypatch):
     assert "Quarterly" in files.calls[0]["q"]
 
 
+def test_search_docs_escapes_single_quotes_for_drive_query(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    files = FakeFiles({"files": []})
+    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        docs_api,
+        "build",
+        lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments()),
+    )
+
+    docs_api.search_docs("personal", config, "Mike's Notes", 10)
+
+    assert "Mike\\'s Notes" in files.calls[0]["q"]
+
+
 def test_create_doc_audit_logs_operation(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     documents = FakeDocuments()
@@ -156,7 +171,7 @@ def test_create_doc_audit_logs_operation(tmp_path, monkeypatch):
 
     assert doc_id == "doc-1"
     assert request_id.startswith("req_")
-    assert "docs.create_doc" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+    assert "docs.create" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_create_doc_with_initial_content_uses_batch_update(tmp_path, monkeypatch):

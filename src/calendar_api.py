@@ -105,7 +105,7 @@ def create_event(
         event = service.events().insert(calendarId="primary", body=body).execute()
     except Exception as exc:
         request_id = log_mutation(
-            "calendar.create_event",
+            "calendar.create",
             account,
             "event",
             "unknown",
@@ -116,7 +116,7 @@ def create_event(
         )
         raise click.ClickException(f"Failed to create event | audit: {request_id}") from exc
     request_id = log_mutation(
-        "calendar.create_event",
+        "calendar.create",
         account,
         "event",
         event["id"],
@@ -144,7 +144,7 @@ def update_event(account: str, config: AppConfig, event_id: str, **kwargs) -> tu
         service.events().patch(calendarId="primary", eventId=event_id, body=body).execute()
     except Exception as exc:
         request_id = log_mutation(
-            "calendar.update_event",
+            "calendar.update",
             account,
             "event",
             event_id,
@@ -155,7 +155,7 @@ def update_event(account: str, config: AppConfig, event_id: str, **kwargs) -> tu
         )
         raise click.ClickException(f"Failed to update event | audit: {request_id}") from exc
     request_id = log_mutation(
-        "calendar.update_event",
+        "calendar.update",
         account,
         "event",
         event_id,
@@ -172,7 +172,7 @@ def delete_event(account: str, config: AppConfig, event_id: str) -> tuple[str, s
         service.events().delete(calendarId="primary", eventId=event_id).execute()
     except Exception as exc:
         request_id = log_mutation(
-            "calendar.delete_event",
+            "calendar.delete",
             account,
             "event",
             event_id,
@@ -183,7 +183,7 @@ def delete_event(account: str, config: AppConfig, event_id: str) -> tuple[str, s
         )
         raise click.ClickException(f"Failed to delete event | audit: {request_id}") from exc
     request_id = log_mutation(
-        "calendar.delete_event",
+        "calendar.delete",
         account,
         "event",
         event_id,

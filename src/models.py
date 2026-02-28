@@ -57,6 +57,7 @@ class SheetInfo(BaseModel):
 class SheetRange(BaseModel):
     spreadsheet_id: str
     range: str
+    sanitized_range: str
     sanitized_values: list[list[str]]
 
 

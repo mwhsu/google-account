@@ -107,6 +107,8 @@ def test_read_sheet_returns_sanitized_range(tmp_path, monkeypatch):
 
     assert result.range == "Sheet1!A1:B1"
     assert "[REMOVED_ROLE_PREFIX: SYSTEM]" in result.sanitized_values[0][0]
+    assert result.sanitized_range.startswith("[BEGIN SHEET_RANGE]")
+    assert "[REMOVED_ROLE_PREFIX: SYSTEM]" in result.sanitized_range
 
 
 def test_read_sheet_respects_max_sheet_cells_limit(tmp_path, monkeypatch):
@@ -125,10 +127,7 @@ def test_read_sheet_respects_max_sheet_cells_limit(tmp_path, monkeypatch):
 
     result = sheets_api.read_sheet("personal", config, "sheet-1", "Sheet1")
 
-    assert result.sanitized_values == [
-        [result.sanitized_values[0][0], result.sanitized_values[0][1]],
-        [result.sanitized_values[1][0]],
-    ]
+    assert result.sanitized_values == [["a1", "b1"], ["a2"]]
 
 
 def test_search_sheets_passes_query_to_drive_api(tmp_path, monkeypatch):
@@ -148,6 +147,23 @@ def test_search_sheets_passes_query_to_drive_api(tmp_path, monkeypatch):
     assert "Budget" in files.calls[0]["q"]
 
 
+def test_search_sheets_escapes_single_quotes_for_drive_query(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    files = FakeFiles({"files": []})
+    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        sheets_api,
+        "build",
+        lambda service, *_args, **_kwargs: FakeDriveService(files)
+        if service == "drive"
+        else FakeSheetsService(FakeSpreadsheets(FakeValues())),
+    )
+
+    sheets_api.search_sheets("personal", config, "Mike's Budget", 10)
+
+    assert "Mike\\'s Budget" in files.calls[0]["q"]
+
+
 def test_create_sheet_audit_logs_operation(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     spreadsheets = FakeSpreadsheets(FakeValues())
@@ -158,7 +174,7 @@ def test_create_sheet_audit_logs_operation(tmp_path, monkeypatch):
 
     assert sheet_id == "sheet-1"
     assert request_id.startswith("req_")
-    assert "sheets.create_sheet" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+    assert "sheets.create" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_update_sheet_audit_logs_operation(tmp_path, monkeypatch):
@@ -171,6 +187,7 @@ def test_update_sheet_audit_logs_operation(tmp_path, monkeypatch):
 
     assert sheet_id == "sheet-1"
     assert values.calls[0][0] == "update"
+    assert "sheets.update" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_values_json_is_correctly_passed_through(tmp_path, monkeypatch):

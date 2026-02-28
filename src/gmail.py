@@ -134,7 +134,7 @@ def create_draft(account: str, config: AppConfig, to: str, subject: str, body: s
         )
     except Exception as exc:
         request_id = log_mutation(
-            "gmail.create_draft",
+            "gmail.draft",
             account,
             "draft",
             "unknown",
@@ -146,7 +146,7 @@ def create_draft(account: str, config: AppConfig, to: str, subject: str, body: s
         raise click.ClickException(f"Failed to create draft | audit: {request_id}") from exc
     draft_id = response["id"]
     request_id = log_mutation(
-        "gmail.create_draft",
+        "gmail.draft",
         account,
         "draft",
         draft_id,

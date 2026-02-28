@@ -358,7 +358,12 @@ def sheets_create(account: str, title: str, rows: int, cols: int):
 @click.argument("sheet_id")
 @_handle_errors
 def sheets_update(account: str, range_name: str, values: str, sheet_id: str):
-    parsed_values = json.loads(values)
+    try:
+        parsed_values = json.loads(values)
+    except json.JSONDecodeError as exc:
+        raise click.UsageError(f"--values must be valid JSON: {exc.msg}") from exc
+    if not isinstance(parsed_values, list) or any(not isinstance(row, list) for row in parsed_values):
+        raise click.UsageError("--values must decode to a JSON array of rows, e.g. [[\"a1\", \"b1\"]]")
     updated_id, request_id = sheets_api.update_sheet(
         account, load_config(), sheet_id, range_name, parsed_values
     )

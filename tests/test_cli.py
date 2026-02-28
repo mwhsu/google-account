@@ -120,3 +120,36 @@ def test_docs_update_requires_exactly_one_mode(monkeypatch):
 
     assert result.exit_code != 0
     assert "Specify exactly one of --replace or --append" in result.output
+
+
+def test_sheets_read_plaintext_uses_wrapped_sanitized_range(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        cli_module.sheets_api,
+        "read_sheet",
+        lambda *_args, **_kwargs: cli_module.SheetRange(
+            spreadsheet_id="sheet-1",
+            range="Sheet1!A1:B1",
+            sanitized_range="[BEGIN SHEET_RANGE]\na1 | b1\n[END SHEET_RANGE]",
+            sanitized_values=[["a1", "b1"]],
+        ),
+    )
+
+    result = runner.invoke(cli_module.cli, ["sheets", "read", "--account", "personal", "sheet-1"])
+
+    assert result.exit_code == 0
+    assert "[BEGIN SHEET_RANGE]" in result.output
+
+
+def test_sheets_update_rejects_non_tabular_json(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+
+    result = runner.invoke(
+        cli_module.cli,
+        ["sheets", "update", "--account", "personal", "--range", "A1:B1", "--values", "{\"a\":1}", "sheet-1"],
+    )
+
+    assert result.exit_code != 0
+    assert "--values must decode to a JSON array of rows" in result.output

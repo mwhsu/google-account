@@ -34,6 +34,10 @@ def _drive_doc_query(extra_query: str | None = None) -> str:
     return query
 
 
+def _escape_drive_query_literal(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
 def _file_to_doc_info(file_data: dict) -> DocInfo:
     return DocInfo(
         id=file_data["id"],
@@ -111,7 +115,7 @@ def search_docs(account: str, config: AppConfig, query: str, limit: int) -> list
     response = (
         service.files()
         .list(
-            q=_drive_doc_query(f"name contains '{query}'"),
+            q=_drive_doc_query(f"name contains '{_escape_drive_query_literal(query)}'"),
             pageSize=limit,
             orderBy="modifiedTime desc",
             fields="files(id,name,modifiedTime)",
@@ -132,7 +136,7 @@ def create_doc(account: str, config: AppConfig, title: str, content: str) -> tup
             ).execute()
     except Exception as exc:
         request_id = log_mutation(
-            "docs.create_doc",
+            "docs.create",
             account,
             "doc",
             "unknown",
@@ -144,7 +148,7 @@ def create_doc(account: str, config: AppConfig, title: str, content: str) -> tup
         raise click.ClickException(f"Failed to create doc | audit: {request_id}") from exc
     doc_id = document["documentId"]
     request_id = log_mutation(
-        "docs.create_doc",
+        "docs.create",
         account,
         "doc",
         doc_id,
@@ -186,7 +190,7 @@ def update_doc(
         service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
     except Exception as exc:
         request_id = log_mutation(
-            "docs.update_doc",
+            "docs.update",
             account,
             "doc",
             doc_id,
@@ -197,7 +201,7 @@ def update_doc(
         )
         raise click.ClickException(f"Failed to update doc | audit: {request_id}") from exc
     request_id = log_mutation(
-        "docs.update_doc",
+        "docs.update",
         account,
         "doc",
         doc_id,
