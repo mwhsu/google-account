@@ -109,6 +109,7 @@ def test_create_event_audit_logs_operation(tmp_path, monkeypatch):
 
     assert event_id == "evt-1"
     assert request_id.startswith("req_")
+    assert "calendar.create" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_update_event_audit_logs_operation(tmp_path, monkeypatch):
@@ -121,6 +122,7 @@ def test_update_event_audit_logs_operation(tmp_path, monkeypatch):
 
     assert event_id == "evt-1"
     assert any(call[0] == "patch" for call in events.calls)
+    assert "calendar.update" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_delete_event_audit_logs_operation(tmp_path, monkeypatch):
@@ -133,6 +135,7 @@ def test_delete_event_audit_logs_operation(tmp_path, monkeypatch):
 
     assert event_id == "evt-1"
     assert any(call[0] == "delete" for call in events.calls)
+    assert "calendar.delete" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_mutation_failure_is_audit_logged_with_error_status(tmp_path, monkeypatch):

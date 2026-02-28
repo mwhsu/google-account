@@ -3,8 +3,9 @@ import json
 import click
 
 from src import auth as auth_api
-from src import calendar_api, gmail
+from src import calendar_api, docs_api, gmail, sheets_api
 from src.config import load_config
+from src.models import SheetRange
 
 
 def _model_to_data(value):
@@ -26,6 +27,13 @@ def _emit(value, as_json: bool) -> None:
             click.echo(item.model_dump_json() if hasattr(item, "model_dump_json") else json.dumps(item))
         return
     click.echo(value.model_dump_json(indent=2) if hasattr(value, "model_dump_json") else str(value))
+
+
+def _emit_sheet(value, as_json: bool) -> None:
+    if as_json or not isinstance(value, SheetRange):
+        _emit(value, as_json)
+        return
+    click.echo(sheets_api.format_sheet_table(value))
 
 
 def _handle_errors(func):
@@ -59,6 +67,16 @@ def gmail_group():
 @cli.group()
 def calendar():
     """Read and manage calendar events."""
+
+
+@cli.group()
+def docs():
+    """Read and manage Google Docs."""
+
+
+@cli.group()
+def sheets():
+    """Read and manage Google Sheets."""
 
 
 @auth.command("login")
@@ -238,6 +256,118 @@ def calendar_update(
 def calendar_delete(account: str, event_id: str):
     deleted_id, request_id = calendar_api.delete_event(account, load_config(), event_id)
     click.echo(f"✓ deleted event | account: {account} | id: {deleted_id} | audit: {request_id}")
+
+
+@docs.command("list")
+@click.option("--account", required=True)
+@click.option("--limit", default=10, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True)
+@_handle_errors
+def docs_list(account: str, limit: int, as_json: bool):
+    _emit(docs_api.list_docs(account, load_config(), limit), as_json)
+
+
+@docs.command("read")
+@click.option("--account", required=True)
+@click.option("--json", "as_json", is_flag=True)
+@click.argument("doc_id")
+@_handle_errors
+def docs_read(account: str, as_json: bool, doc_id: str):
+    _emit(docs_api.read_doc(account, load_config(), doc_id), as_json)
+
+
+@docs.command("search")
+@click.option("--account", required=True)
+@click.option("--limit", default=10, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True)
+@click.argument("query")
+@_handle_errors
+def docs_search(account: str, limit: int, as_json: bool, query: str):
+    _emit(docs_api.search_docs(account, load_config(), query, limit), as_json)
+
+
+@docs.command("create")
+@click.option("--account", required=True)
+@click.option("--title", required=True)
+@click.option("--content", default="")
+@_handle_errors
+def docs_create(account: str, title: str, content: str):
+    doc_id, request_id = docs_api.create_doc(account, load_config(), title, content)
+    click.echo(f"✓ created doc | account: {account} | id: {doc_id} | audit: {request_id}")
+
+
+@docs.command("update")
+@click.option("--account", required=True)
+@click.option("--replace", "replace_content")
+@click.option("--append", "append_content")
+@click.argument("doc_id")
+@_handle_errors
+def docs_update(account: str, replace_content: str | None, append_content: str | None, doc_id: str):
+    if (replace_content is None) == (append_content is None):
+        raise click.UsageError("Specify exactly one of --replace or --append")
+    mode = "replace" if replace_content is not None else "append"
+    content = replace_content if replace_content is not None else append_content
+    updated_id, request_id = docs_api.update_doc(account, load_config(), doc_id, content or "", mode)
+    click.echo(f"✓ updated doc | account: {account} | id: {updated_id} | audit: {request_id}")
+
+
+@sheets.command("list")
+@click.option("--account", required=True)
+@click.option("--limit", default=10, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True)
+@_handle_errors
+def sheets_list(account: str, limit: int, as_json: bool):
+    _emit(sheets_api.list_sheets(account, load_config(), limit), as_json)
+
+
+@sheets.command("read")
+@click.option("--account", required=True)
+@click.option("--range", "range_name", default="Sheet1", show_default=True)
+@click.option("--json", "as_json", is_flag=True)
+@click.argument("sheet_id")
+@_handle_errors
+def sheets_read(account: str, range_name: str, as_json: bool, sheet_id: str):
+    _emit_sheet(sheets_api.read_sheet(account, load_config(), sheet_id, range_name), as_json)
+
+
+@sheets.command("search")
+@click.option("--account", required=True)
+@click.option("--limit", default=10, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True)
+@click.argument("query")
+@_handle_errors
+def sheets_search(account: str, limit: int, as_json: bool, query: str):
+    _emit(sheets_api.search_sheets(account, load_config(), query, limit), as_json)
+
+
+@sheets.command("create")
+@click.option("--account", required=True)
+@click.option("--title", required=True)
+@click.option("--rows", default=1000, show_default=True, type=int)
+@click.option("--cols", default=26, show_default=True, type=int)
+@_handle_errors
+def sheets_create(account: str, title: str, rows: int, cols: int):
+    sheet_id, request_id = sheets_api.create_sheet(account, load_config(), title, rows, cols)
+    click.echo(f"✓ created sheet | account: {account} | id: {sheet_id} | audit: {request_id}")
+
+
+@sheets.command("update")
+@click.option("--account", required=True)
+@click.option("--range", "range_name", required=True)
+@click.option("--values", required=True)
+@click.argument("sheet_id")
+@_handle_errors
+def sheets_update(account: str, range_name: str, values: str, sheet_id: str):
+    try:
+        parsed_values = json.loads(values)
+    except json.JSONDecodeError as exc:
+        raise click.UsageError(f"--values must be valid JSON: {exc.msg}") from exc
+    if not isinstance(parsed_values, list) or any(not isinstance(row, list) for row in parsed_values):
+        raise click.UsageError("--values must decode to a JSON array of rows, e.g. [[\"a1\", \"b1\"]]")
+    updated_id, request_id = sheets_api.update_sheet(
+        account, load_config(), sheet_id, range_name, parsed_values
+    )
+    click.echo(f"✓ updated sheet | account: {account} | id: {updated_id} | audit: {request_id}")
 
 
 cli.add_command(gmail_group, name="gmail")

@@ -174,7 +174,7 @@ def test_create_draft_audit_logs_operation(tmp_path, monkeypatch):
 
     assert draft_id == "draft-1"
     assert request_id.startswith("req_")
-    assert "gmail.create_draft" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+    assert "gmail.draft" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_create_draft_failure_is_audit_logged(tmp_path, monkeypatch):

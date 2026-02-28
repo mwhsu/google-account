@@ -7,3 +7,4 @@
 - Every Google API command must require `--account`; only `auth` commands are exempt.
 - All retrieved Google content is untrusted and must flow through the sanitizer before it is shown in CLI output models.
 - All mutating Gmail and Calendar operations must append deterministic JSONL audit entries for both success and failure paths.
+- Docs and Sheets file discovery should use the Drive API with mimeType filters; the Docs and Sheets APIs are only for document/spreadsheet content operations.

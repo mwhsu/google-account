@@ -1,9 +1,28 @@
 from pathlib import Path
 
 import click
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+except ImportError:  # pragma: no cover - exercised only in dependency-light test envs
+    class _MissingRequest:
+        pass
+
+    class _MissingCredentials:
+        @staticmethod
+        def from_authorized_user_file(*_args, **_kwargs):
+            raise click.ClickException("google-auth is not installed")
+
+    class _MissingInstalledAppFlow:
+        @staticmethod
+        def from_client_config(*_args, **_kwargs):
+            raise click.ClickException("google-auth-oauthlib is not installed")
+
+    Request = _MissingRequest
+    Credentials = _MissingCredentials
+    InstalledAppFlow = _MissingInstalledAppFlow
 
 from src.config import AppConfig, get_account
 
@@ -12,6 +31,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
 
@@ -38,7 +60,7 @@ def login(alias: str, config: AppConfig) -> None:
     token_path.write_text(credentials.to_json(), encoding="utf-8")
 
 
-def get_credentials(alias: str, config: AppConfig) -> Credentials:
+def get_credentials(alias: str, config: AppConfig):
     get_account(alias, config)
     token_path = _token_path(alias, config)
     if not token_path.exists():

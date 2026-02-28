@@ -104,3 +104,7 @@ def test_token_refresh_is_attempted_for_expired_tokens(tmp_path, monkeypatch):
     auth.get_credentials("personal", config)
 
     assert creds.refreshed is True
+
+
+def test_scopes_include_drive_metadata_readonly_for_docs_and_sheets_listing():
+    assert "https://www.googleapis.com/auth/drive.metadata.readonly" in auth.SCOPES

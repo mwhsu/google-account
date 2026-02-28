@@ -36,6 +36,31 @@ class Label(BaseModel):
     type: str = ""
 
 
+class DocInfo(BaseModel):
+    id: str
+    title: str
+    modified_time: str = ""
+
+
+class DocContent(BaseModel):
+    id: str
+    title: str
+    sanitized_content: str
+
+
+class SheetInfo(BaseModel):
+    id: str
+    title: str
+    modified_time: str = ""
+
+
+class SheetRange(BaseModel):
+    spreadsheet_id: str
+    range: str
+    sanitized_range: str
+    sanitized_values: list[list[str]]
+
+
 class AuditEntry(BaseModel):
     timestamp: str
     action: str
