@@ -153,3 +153,60 @@ def test_sheets_update_rejects_non_tabular_json(monkeypatch):
 
     assert result.exit_code != 0
     assert "--values must decode to a JSON array of rows" in result.output
+
+
+def test_calendar_create_accepts_calendar_alias(monkeypatch):
+    runner = CliRunner()
+    seen = {}
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+
+    def fake_create_event(account, config, title, start, end, description, location, calendar=None):
+        seen.update(
+            {
+                "account": account,
+                "config": config,
+                "title": title,
+                "calendar": calendar,
+            }
+        )
+        return "evt-1", "req_123"
+
+    monkeypatch.setattr(cli_module.calendar_api, "create_event", fake_create_event)
+
+    result = runner.invoke(
+        cli_module.cli,
+        [
+            "calendar",
+            "create",
+            "--account",
+            "personal",
+            "--calendar",
+            "family",
+            "--start",
+            "2026-03-01T10:00:00Z",
+            "--end",
+            "2026-03-01T11:00:00Z",
+            "Planning",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert seen["calendar"] == "family"
+
+
+def test_calendar_free_busy_parses_accounts_list(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        cli_module.calendar_api,
+        "get_free_busy",
+        lambda accounts, _config, target_date: {"accounts": accounts, "date": target_date},
+    )
+
+    result = runner.invoke(
+        cli_module.cli,
+        ["calendar", "free-busy", "--accounts", "michael,elaine", "--date", "2026-03-07", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {"accounts": ["michael", "elaine"], "date": "2026-03-07"}

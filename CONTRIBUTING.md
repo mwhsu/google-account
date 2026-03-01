@@ -8,3 +8,4 @@
 - All retrieved Google content is untrusted and must flow through the sanitizer before it is shown in CLI output models.
 - All mutating Gmail and Calendar operations must append deterministic JSONL audit entries for both success and failure paths.
 - Docs and Sheets file discovery should use the Drive API with mimeType filters; the Docs and Sheets APIs are only for document/spreadsheet content operations.
+- Cross-account Calendar FreeBusy requests cannot use `primary` for another account; store a real `accounts.<alias>.calendar_id` (usually the account email/calendar ID) and batch those IDs from one authenticated requester that has access.

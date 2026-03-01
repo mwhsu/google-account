@@ -49,6 +49,13 @@ def _handle_errors(func):
     return wrapped
 
 
+def _parse_accounts(value: str) -> list[str]:
+    accounts = [account.strip() for account in value.split(",") if account.strip()]
+    if not accounts:
+        raise click.UsageError("Specify at least one account alias")
+    return accounts
+
+
 @click.group()
 def cli():
     """Google account CLI - safe multi-account access."""
@@ -171,33 +178,37 @@ def gmail_drafts(account: str, limit: int, as_json: bool):
 
 @calendar.command("today")
 @click.option("--account", required=True)
+@click.option("--calendar", "calendar_alias")
 @click.option("--json", "as_json", is_flag=True)
 @_handle_errors
-def calendar_today(account: str, as_json: bool):
-    _emit(calendar_api.get_today(account, load_config()), as_json)
+def calendar_today(account: str, calendar_alias: str | None, as_json: bool):
+    _emit(calendar_api.get_today(account, load_config(), calendar=calendar_alias), as_json)
 
 
 @calendar.command("upcoming")
 @click.option("--account", required=True)
+@click.option("--calendar", "calendar_alias")
 @click.option("--days", default=7, show_default=True, type=int)
 @click.option("--json", "as_json", is_flag=True)
 @_handle_errors
-def calendar_upcoming(account: str, days: int, as_json: bool):
-    _emit(calendar_api.get_upcoming(account, load_config(), days), as_json)
+def calendar_upcoming(account: str, calendar_alias: str | None, days: int, as_json: bool):
+    _emit(calendar_api.get_upcoming(account, load_config(), days, calendar=calendar_alias), as_json)
 
 
 @calendar.command("search")
 @click.option("--account", required=True)
+@click.option("--calendar", "calendar_alias")
 @click.option("--days", default=30, show_default=True, type=int)
 @click.option("--json", "as_json", is_flag=True)
 @click.argument("query")
 @_handle_errors
-def calendar_search(account: str, days: int, as_json: bool, query: str):
-    _emit(calendar_api.search_events(account, load_config(), query, days), as_json)
+def calendar_search(account: str, calendar_alias: str | None, days: int, as_json: bool, query: str):
+    _emit(calendar_api.search_events(account, load_config(), query, days, calendar=calendar_alias), as_json)
 
 
 @calendar.command("create")
 @click.option("--account", required=True)
+@click.option("--calendar", "calendar_alias")
 @click.option("--start", required=True)
 @click.option("--end", required=True)
 @click.option("--description", default="")
@@ -206,6 +217,7 @@ def calendar_search(account: str, days: int, as_json: bool, query: str):
 @_handle_errors
 def calendar_create(
     account: str,
+    calendar_alias: str | None,
     start: str,
     end: str,
     description: str,
@@ -213,13 +225,14 @@ def calendar_create(
     title: str,
 ):
     event_id, request_id = calendar_api.create_event(
-        account, load_config(), title, start, end, description, location
+        account, load_config(), title, start, end, description, location, calendar=calendar_alias
     )
     click.echo(f"✓ created event | account: {account} | id: {event_id} | audit: {request_id}")
 
 
 @calendar.command("update")
 @click.option("--account", required=True)
+@click.option("--calendar", "calendar_alias")
 @click.option("--title")
 @click.option("--start")
 @click.option("--end")
@@ -229,6 +242,7 @@ def calendar_create(
 @_handle_errors
 def calendar_update(
     account: str,
+    calendar_alias: str | None,
     title: str | None,
     start: str | None,
     end: str | None,
@@ -240,6 +254,7 @@ def calendar_update(
         account,
         load_config(),
         event_id,
+        calendar=calendar_alias,
         title=title,
         start=start,
         end=end,
@@ -251,11 +266,31 @@ def calendar_update(
 
 @calendar.command("delete")
 @click.option("--account", required=True)
+@click.option("--calendar", "calendar_alias")
 @click.argument("event_id")
 @_handle_errors
-def calendar_delete(account: str, event_id: str):
-    deleted_id, request_id = calendar_api.delete_event(account, load_config(), event_id)
+def calendar_delete(account: str, calendar_alias: str | None, event_id: str):
+    deleted_id, request_id = calendar_api.delete_event(account, load_config(), event_id, calendar=calendar_alias)
     click.echo(f"✓ deleted event | account: {account} | id: {deleted_id} | audit: {request_id}")
+
+
+@calendar.command("free-busy")
+@click.option("--accounts", required=True, callback=lambda _ctx, _param, value: _parse_accounts(value))
+@click.option("--date", "target_date", required=True)
+@click.option("--json", "as_json", is_flag=True)
+@_handle_errors
+def calendar_free_busy(accounts: list[str], target_date: str, as_json: bool):
+    _emit(calendar_api.get_free_busy(accounts, load_config(), target_date), as_json)
+
+
+@calendar.command("overlap")
+@click.option("--accounts", required=True, callback=lambda _ctx, _param, value: _parse_accounts(value))
+@click.option("--date", "target_date", required=True)
+@click.option("--min-duration", default=30, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True)
+@_handle_errors
+def calendar_overlap(accounts: list[str], target_date: str, min_duration: int, as_json: bool):
+    _emit(calendar_api.get_overlap(accounts, load_config(), target_date, min_duration), as_json)
 
 
 @docs.command("list")

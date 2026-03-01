@@ -20,12 +20,14 @@ class LoggingConfig(BaseModel):
 
 class AccountConfig(BaseModel):
     description: str = ""
+    calendar_id: str | None = None
 
 
 class AppConfig(BaseModel):
     client_id: str
     client_secret: str
     accounts: dict[str, AccountConfig]
+    calendars: dict[str, str] = {}
     sanitization: SanitizationConfig = SanitizationConfig()
     logging: LoggingConfig = LoggingConfig()
     token_dir: str = "~/.config/google-account/tokens"
@@ -51,3 +53,12 @@ def get_account(alias: str, config: AppConfig | None = None) -> AccountConfig:
     if alias not in active_config.accounts:
         raise click.UsageError(f"Unknown account alias: {alias}")
     return active_config.accounts[alias]
+
+
+def get_calendar_id(alias: str | None, config: AppConfig | None = None) -> str:
+    if alias in (None, "", "primary"):
+        return "primary"
+    active_config = config or load_config()
+    if alias not in active_config.calendars:
+        raise click.UsageError(f"Unknown calendar alias: {alias}")
+    return active_config.calendars[alias]
