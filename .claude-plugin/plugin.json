@@ -6,11 +6,11 @@
   "repository": "https://github.com/mwhsu/google-account",
   "license": "MIT",
   "keywords": ["google", "gmail", "calendar", "docs", "sheets"],
-  "skills": "./skills/",
+  "skills": "../skills/",
   "commands": [
-    "./commands/gmail.md",
-    "./commands/calendar.md",
-    "./commands/docs.md",
-    "./commands/sheets.md"
+    "../commands/gmail.md",
+    "../commands/calendar.md",
+    "../commands/docs.md",
+    "../commands/sheets.md"
   ]
 }
