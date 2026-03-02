@@ -19,6 +19,13 @@ class EmailThread(BaseModel):
     messages: list[EmailMessage]
 
 
+class DraftInfo(BaseModel):
+    id: str
+    message_id: str
+    subject: str = ""
+    to: str = ""
+
+
 class CalendarEvent(BaseModel):
     id: str
     summary: str
@@ -28,30 +35,6 @@ class CalendarEvent(BaseModel):
     sanitized_description: str = ""
     status: str = ""
     html_link: str = ""
-
-
-class CalendarWindow(BaseModel):
-    start: str
-    end: str
-
-
-class AccountFreeBusy(BaseModel):
-    account: str
-    busy: list[CalendarWindow]
-
-
-class CalendarFreeBusyResult(BaseModel):
-    date: str
-    accounts: list[AccountFreeBusy]
-    merged_busy: list[CalendarWindow]
-    merged_free: list[CalendarWindow]
-
-
-class CalendarOverlapResult(BaseModel):
-    date: str
-    accounts: list[str]
-    min_duration_minutes: int
-    windows: list[CalendarWindow]
 
 
 class Label(BaseModel):
@@ -85,6 +68,45 @@ class SheetRange(BaseModel):
     sanitized_values: list[list[str]]
 
 
+class DriveFile(BaseModel):
+    id: str
+    name: str
+    mime_type: str = ""
+    modified_time: str = ""
+    size: str = ""
+    parents: list[str] = []
+    web_view_link: str = ""
+    trashed: bool = False
+
+
+class DrivePermission(BaseModel):
+    id: str
+    role: str
+    type: str
+    email_address: str = ""
+    display_name: str = ""
+
+
+class DriveFolder(BaseModel):
+    id: str
+    name: str
+    parents: list[str] = []
+
+
+class Contact(BaseModel):
+    resource_name: str
+    display_name: str = ""
+    emails: list[str] = []
+    phones: list[str] = []
+    organization: str = ""
+
+
+class ContactGroup(BaseModel):
+    resource_name: str
+    name: str
+    member_count: int = 0
+
+
 class AuditEntry(BaseModel):
     timestamp: str
     action: str
@@ -95,3 +117,4 @@ class AuditEntry(BaseModel):
     summary: str
     request_id: str
     error: str | None = None
+    params: dict[str, str] | None = None

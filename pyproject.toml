@@ -1,7 +1,7 @@
 [project]
 name = "google-account"
-version = "0.1.0"
-description = "Claude Code plugin for safe multi-account Google access (Gmail, Calendar, Docs, Sheets)"
+version = "0.2.0"
+description = "Claude Code plugin for safe multi-account Google access (Gmail, Calendar, Docs, Sheets, Drive, Contacts)"
 authors = [{ name = "Michael Hsu" }]
 readme = "README.md"
 requires-python = ">=3.12"

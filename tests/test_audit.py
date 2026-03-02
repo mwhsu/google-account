@@ -55,6 +55,7 @@ def test_entry_contains_required_fields(tmp_path):
             "summary",
             "request_id",
             "error",
+            "params",
         ]
     )
 

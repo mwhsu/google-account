@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import click
 
@@ -9,14 +9,9 @@ except ImportError:  # pragma: no cover - exercised only in dependency-light tes
 
 from src.audit import log_mutation
 from src.auth import get_credentials
-from src.config import AppConfig, get_account, get_calendar_id
-from src.models import (
-    AccountFreeBusy,
-    CalendarEvent,
-    CalendarFreeBusyResult,
-    CalendarOverlapResult,
-    CalendarWindow,
-)
+from src.config import AppConfig, get_calendar_id
+from src.models import CalendarEvent
+from src.pagination import paginate
 from src.sanitizer import sanitize
 
 
@@ -48,67 +43,6 @@ def _event_to_model(event: dict, config: AppConfig) -> CalendarEvent:
     )
 
 
-def _parse_datetime(value: str) -> datetime:
-    normalized = value.replace("Z", "+00:00")
-    parsed = datetime.fromisoformat(normalized)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def _merge_windows(windows: list[CalendarWindow]) -> list[CalendarWindow]:
-    if not windows:
-        return []
-    ordered = sorted(windows, key=lambda window: window.start)
-    merged = [ordered[0]]
-    for window in ordered[1:]:
-        previous = merged[-1]
-        if _parse_datetime(window.start) <= _parse_datetime(previous.end):
-            merged[-1] = CalendarWindow(
-                start=previous.start,
-                end=max(previous.end, window.end, key=_parse_datetime),
-            )
-            continue
-        merged.append(window)
-    return merged
-
-
-def _invert_busy_windows(
-    busy_windows: list[CalendarWindow],
-    day_start: datetime,
-    day_end: datetime,
-) -> list[CalendarWindow]:
-    free_windows: list[CalendarWindow] = []
-    cursor = day_start
-    for window in busy_windows:
-        window_start = _parse_datetime(window.start)
-        window_end = _parse_datetime(window.end)
-        if window_start > cursor:
-            free_windows.append(CalendarWindow(start=cursor.isoformat(), end=window_start.isoformat()))
-        if window_end > cursor:
-            cursor = window_end
-    if cursor < day_end:
-        free_windows.append(CalendarWindow(start=cursor.isoformat(), end=day_end.isoformat()))
-    return free_windows
-
-
-def _day_bounds(value: str) -> tuple[datetime, datetime]:
-    target_day = date.fromisoformat(value)
-    start = datetime(target_day.year, target_day.month, target_day.day, tzinfo=timezone.utc)
-    return start, start + timedelta(days=1)
-
-
-def _resolve_freebusy_calendar_id(requester: str, target_account: str, config: AppConfig) -> str:
-    if requester == target_account:
-        return "primary"
-    calendar_id = get_account(target_account, config).calendar_id
-    if not calendar_id:
-        raise click.UsageError(
-            f"Account '{target_account}' requires accounts.{target_account}.calendar_id for cross-account free/busy"
-        )
-    return calendar_id
-
-
 def _list_events(
     account: str,
     config: AppConfig,
@@ -117,21 +51,31 @@ def _list_events(
     time_max: str,
     query: str | None = None,
     calendar: str | None = None,
+    limit: int = 250,
 ):
     service = _calendar_service(account, config)
-    response = (
-        service.events()
-        .list(
-            calendarId=get_calendar_id(calendar, config),
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy="startTime",
-            q=query,
+    cal_id = get_calendar_id(calendar, config)
+
+    def fetch_page(token):
+        response = (
+            service.events()
+            .list(
+                calendarId=cal_id,
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy="startTime",
+                q=query,
+                maxResults=min(limit, 250),
+                pageToken=token,
+            )
+            .execute()
         )
-        .execute()
-    )
-    return [_event_to_model(event, config) for event in response.get("items", [])]
+        items = [_event_to_model(e, config) for e in response.get("items", [])]
+        return items, response.get("nextPageToken")
+
+    items, _ = paginate(fetch_page, limit)
+    return items
 
 
 def get_today(account: str, config: AppConfig, calendar: str | None = None) -> list[CalendarEvent]:
@@ -196,6 +140,7 @@ def create_event(
             f"Create event {title}",
             config,
             error=str(exc),
+            params={"title": title, "start": start, "end": end},
         )
         raise click.ClickException(f"Failed to create event | audit: {request_id}") from exc
     request_id = log_mutation(
@@ -206,6 +151,7 @@ def create_event(
         "success",
         f"Create event {title}",
         config,
+        params={"title": title, "start": start, "end": end},
     )
     return event["id"], request_id
 
@@ -223,6 +169,7 @@ def update_event(account: str, config: AppConfig, event_id: str, calendar: str |
         body["description"] = kwargs["description"]
     if kwargs.get("location") is not None:
         body["location"] = kwargs["location"]
+    changed_fields = {k: str(v) for k, v in kwargs.items() if v is not None}
     try:
         service.events().patch(calendarId=get_calendar_id(calendar, config), eventId=event_id, body=body).execute()
     except Exception as exc:
@@ -235,6 +182,7 @@ def update_event(account: str, config: AppConfig, event_id: str, calendar: str |
             f"Update event {event_id}",
             config,
             error=str(exc),
+            params={"event_id": event_id, **changed_fields},
         )
         raise click.ClickException(f"Failed to update event | audit: {request_id}") from exc
     request_id = log_mutation(
@@ -245,6 +193,7 @@ def update_event(account: str, config: AppConfig, event_id: str, calendar: str |
         "success",
         f"Update event {event_id}",
         config,
+        params={"event_id": event_id, **changed_fields},
     )
     return event_id, request_id
 
@@ -263,6 +212,7 @@ def delete_event(account: str, config: AppConfig, event_id: str, calendar: str |
             f"Delete event {event_id}",
             config,
             error=str(exc),
+            params={"event_id": event_id},
         )
         raise click.ClickException(f"Failed to delete event | audit: {request_id}") from exc
     request_id = log_mutation(
@@ -273,66 +223,6 @@ def delete_event(account: str, config: AppConfig, event_id: str, calendar: str |
         "success",
         f"Delete event {event_id}",
         config,
+        params={"event_id": event_id},
     )
     return event_id, request_id
-
-
-def get_free_busy(accounts: list[str], config: AppConfig, target_date: str) -> CalendarFreeBusyResult:
-    if not accounts:
-        raise click.UsageError("Specify at least one account")
-    requester = accounts[0]
-    day_start, day_end = _day_bounds(target_date)
-    calendar_ids = {
-        account: _resolve_freebusy_calendar_id(requester, account, config) for account in accounts
-    }
-    service = _calendar_service(requester, config)
-    response = (
-        service.freebusy()
-        .query(
-            body={
-                "timeMin": day_start.isoformat(),
-                "timeMax": day_end.isoformat(),
-                "items": [{"id": calendar_id} for calendar_id in calendar_ids.values()],
-            }
-        )
-        .execute()
-    )
-    calendars = response.get("calendars", {})
-    schedules: list[AccountFreeBusy] = []
-    merged_windows: list[CalendarWindow] = []
-    for account in accounts:
-        busy = [
-            CalendarWindow(start=window["start"], end=window["end"])
-            for window in calendars.get(calendar_ids[account], {}).get("busy", [])
-        ]
-        schedules.append(AccountFreeBusy(account=account, busy=busy))
-        merged_windows.extend(busy)
-    merged_busy = _merge_windows(merged_windows)
-    merged_free = _invert_busy_windows(merged_busy, day_start, day_end)
-    return CalendarFreeBusyResult(
-        date=target_date,
-        accounts=schedules,
-        merged_busy=merged_busy,
-        merged_free=merged_free,
-    )
-
-
-def get_overlap(
-    accounts: list[str],
-    config: AppConfig,
-    target_date: str,
-    min_duration_minutes: int,
-) -> CalendarOverlapResult:
-    free_busy = get_free_busy(accounts, config, target_date)
-    windows = []
-    minimum = timedelta(minutes=min_duration_minutes)
-    for window in free_busy.merged_free:
-        duration = _parse_datetime(window.end) - _parse_datetime(window.start)
-        if duration >= minimum:
-            windows.append(window)
-    return CalendarOverlapResult(
-        date=target_date,
-        accounts=accounts,
-        min_duration_minutes=min_duration_minutes,
-        windows=windows,
-    )

@@ -1,16 +1,18 @@
 {
   "name": "google-account",
-  "version": "0.1.0",
-  "description": "Safe multi-account Google access (Gmail, Calendar, Docs, Sheets) with prompt injection protection",
+  "version": "0.2.0",
+  "description": "Safe multi-account Google access (Gmail, Calendar, Docs, Sheets, Drive, Contacts) with prompt injection protection",
   "author": { "name": "mwhsu" },
   "repository": "https://github.com/mwhsu/google-account",
   "license": "MIT",
-  "keywords": ["google", "gmail", "calendar", "docs", "sheets"],
+  "keywords": ["google", "gmail", "calendar", "docs", "sheets", "drive", "contacts"],
   "skills": "./skills/",
   "commands": [
     "./commands/gmail.md",
     "./commands/calendar.md",
     "./commands/docs.md",
-    "./commands/sheets.md"
+    "./commands/sheets.md",
+    "./commands/drive.md",
+    "./commands/contacts.md"
   ]
 }

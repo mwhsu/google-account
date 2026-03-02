@@ -1,6 +1,6 @@
 import pytest
 
-from src import docs_api
+from src import docs_api, drive_api
 from src.config import AppConfig
 
 
@@ -103,12 +103,12 @@ def test_list_docs_returns_doc_models(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     files = FakeFiles({"files": [{"id": "doc-1", "name": "Test", "modifiedTime": "2026-03-01T00:00:00Z"}]})
 
-    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(
-        docs_api,
-        "build",
-        lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments()),
-    )
+    fake_creds = object()
+    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments())
+    monkeypatch.setattr(docs_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     result = docs_api.list_docs("personal", config, 5)
 
@@ -134,12 +134,12 @@ def test_read_doc_returns_sanitized_content(tmp_path, monkeypatch):
 def test_search_docs_passes_query_to_drive_api(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     files = FakeFiles({"files": []})
-    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(
-        docs_api,
-        "build",
-        lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments()),
-    )
+    fake_creds = object()
+    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments())
+    monkeypatch.setattr(docs_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     docs_api.search_docs("personal", config, "Quarterly", 10)
 
@@ -149,12 +149,12 @@ def test_search_docs_passes_query_to_drive_api(tmp_path, monkeypatch):
 def test_search_docs_escapes_single_quotes_for_drive_query(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     files = FakeFiles({"files": []})
-    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(
-        docs_api,
-        "build",
-        lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments()),
-    )
+    fake_creds = object()
+    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments())
+    monkeypatch.setattr(docs_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     docs_api.search_docs("personal", config, "Mike's Notes", 10)
 
@@ -224,6 +224,62 @@ def test_mutation_failure_is_audit_logged(tmp_path, monkeypatch):
     assert '"status":"error"' in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
+class PaginatedFakeFiles:
+    """FakeFiles that returns different pages on successive list() calls."""
+
+    def __init__(self, pages):
+        self.pages = pages
+        self.call_index = 0
+        self.calls = []
+
+    def list(self, **kwargs):
+        self.calls.append(kwargs)
+        page = self.pages[self.call_index]
+        self.call_index += 1
+        return ExecuteWrapper(page)
+
+
+def test_list_docs_paginates_across_pages(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    pages = [
+        {"files": [{"id": "doc-1", "name": "Page1", "modifiedTime": "2026-03-01T00:00:00Z"}], "nextPageToken": "tok2"},
+        {"files": [{"id": "doc-2", "name": "Page2", "modifiedTime": "2026-03-01T00:00:00Z"}]},
+    ]
+    files = PaginatedFakeFiles(pages)
+    fake_creds = object()
+    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments())
+    monkeypatch.setattr(docs_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
+
+    result = docs_api.list_docs("personal", config, 10)
+
+    assert len(result) == 2
+    assert result[0].title == "Page1"
+    assert result[1].title == "Page2"
+    assert files.calls[1]["pageToken"] == "tok2"
+
+
+def test_list_docs_stops_at_limit(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    pages = [
+        {"files": [{"id": "doc-1", "name": "A", "modifiedTime": ""}, {"id": "doc-2", "name": "B", "modifiedTime": ""}], "nextPageToken": "tok2"},
+    ]
+    files = PaginatedFakeFiles(pages)
+    fake_creds = object()
+    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeDocsService(FakeDocuments())
+    monkeypatch.setattr(docs_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
+
+    result = docs_api.list_docs("personal", config, 1)
+
+    assert len(result) == 1
+    assert len(files.calls) == 1
+
+
 def test_all_functions_use_mocked_google_api_client(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     files = FakeFiles({"files": []})
@@ -235,8 +291,11 @@ def test_all_functions_use_mocked_google_api_client(tmp_path, monkeypatch):
             return FakeDriveService(files)
         return FakeDocsService(FakeDocuments())
 
-    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: object())
+    fake_creds = object()
+    monkeypatch.setattr(docs_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
     monkeypatch.setattr(docs_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     docs_api.list_docs("personal", config, 5)
 

@@ -15,6 +15,7 @@ CLI: `uv run --project ${CLAUDE_PLUGIN_ROOT} google sheets <command> --account <
 | `search --account <alias> "<query>"` | User wants to find a spreadsheet |
 | `create --account <alias> --title "T"` | User wants to create a new spreadsheet |
 | `update --account <alias> <sheet-id> --range "A1:B2" --values '[[...]]'` | User wants to update cells |
+| `delete --account <alias> <sheet-id>` | User wants to delete a spreadsheet (moves to trash) |
 
 Values format: `'[["a1","b1"],["a2","b2"]]'` (JSON array of rows)
 

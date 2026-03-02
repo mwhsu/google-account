@@ -10,6 +10,10 @@ class SanitizationConfig(BaseModel):
     max_doc_chars: int = 8000
     max_sheet_cells: int = 200
     max_calendar_description_chars: int = 1000
+    max_drive_file_chars: int = 8000
+    max_contact_notes_chars: int = 1000
+    max_download_bytes: int = 10 * 1024 * 1024  # 10MB
+    default_page_limit: int = 50
     strip_html: bool = True
     neutralize_injections: bool = True
 

@@ -30,11 +30,13 @@ from src.config import AppConfig, get_account
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/contacts",
+    "https://www.googleapis.com/auth/contacts.other.readonly",
 ]
 
 
@@ -61,6 +63,18 @@ def login(alias: str, config: AppConfig) -> None:
     token_path.write_text(credentials.to_json(), encoding="utf-8")
 
 
+def _check_scope_mismatch(credentials, alias: str) -> None:
+    granted = set(credentials.scopes or [])
+    required = set(SCOPES)
+    missing = required - granted
+    if missing:
+        scope_list = ", ".join(sorted(missing))
+        raise click.ClickException(
+            f"Account '{alias}' is missing required scopes: {scope_list}. "
+            f"Re-run: google auth login {alias}"
+        )
+
+
 def get_credentials(alias: str, config: AppConfig):
     get_account(alias, config)
     token_path = _token_path(alias, config)
@@ -70,7 +84,30 @@ def get_credentials(alias: str, config: AppConfig):
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())
         token_path.write_text(credentials.to_json(), encoding="utf-8")
+    _check_scope_mismatch(credentials, alias)
     return credentials
+
+
+def check_token_health(alias: str, config: AppConfig) -> dict:
+    """Check token health for google doctor command."""
+    token_path = _token_path(alias, config)
+    if not token_path.exists():
+        return {"alias": alias, "status": "not_authenticated", "missing_scopes": []}
+    try:
+        credentials = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+    except Exception as exc:
+        return {"alias": alias, "status": "invalid_token", "error": str(exc), "missing_scopes": []}
+    granted = set(credentials.scopes or [])
+    required = set(SCOPES)
+    missing = sorted(required - granted)
+    expired = bool(credentials.expired and not credentials.refresh_token)
+    if missing:
+        status = "stale_scopes"
+    elif expired:
+        status = "expired"
+    else:
+        status = "healthy"
+    return {"alias": alias, "status": status, "missing_scopes": missing, "expired": expired}
 
 
 def list_accounts(config: AppConfig) -> list[dict]:

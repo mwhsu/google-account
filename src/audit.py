@@ -15,6 +15,7 @@ def log_mutation(
     summary: str,
     config: AppConfig,
     error: str | None = None,
+    params: dict[str, str] | None = None,
 ) -> str:
     request_id = f"req_{uuid.uuid4().hex[:16]}"
     entry = AuditEntry(
@@ -27,6 +28,7 @@ def log_mutation(
         summary=summary,
         request_id=request_id,
         error=error,
+        params=params,
     )
     path = Path(config.logging.audit_log_path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -17,7 +17,14 @@ CLI: `uv run --project ${CLAUDE_PLUGIN_ROOT} google gmail <command> --account <a
 | `thread --account <alias> <thread-id>` | User wants to see a full conversation |
 | `labels --account <alias>` | User asks about Gmail labels |
 | `draft --account <alias> <to> --subject "S" --body "B"` | User wants to compose/draft an email |
+| `draft --account <alias> <to> --subject "S" --body "B" --thread-id T --in-reply-to M` | User wants to reply to a thread |
 | `drafts --account <alias> --limit 10` | User wants to see existing drafts |
+| `delete-draft --account <alias> <draft-id>` | User wants to delete a draft |
+| `archive --account <alias> <message-id>` | User wants to archive a message |
+| `label --account <alias> <message-id> --add L` | User wants to add a label |
+| `label --account <alias> <message-id> --remove L` | User wants to remove a label |
+| `mark-read --account <alias> <message-id>` | User wants to mark a message as read |
+| `mark-unread --account <alias> <message-id>` | User wants to mark a message as unread |
 
 Check available accounts: `uv run --project ${CLAUDE_PLUGIN_ROOT} google auth list`
 

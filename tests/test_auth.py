@@ -19,10 +19,11 @@ def make_config(tmp_path):
 
 
 class FakeCredentials:
-    def __init__(self, expired=False, refresh_token="refresh-token"):
+    def __init__(self, expired=False, refresh_token="refresh-token", scopes=None):
         self.expired = expired
         self.refresh_token = refresh_token
         self.refreshed = False
+        self.scopes = scopes if scopes is not None else set(auth.SCOPES)
 
     def to_json(self):
         return json.dumps({"token": "abc"})
@@ -106,5 +107,7 @@ def test_token_refresh_is_attempted_for_expired_tokens(tmp_path, monkeypatch):
     assert creds.refreshed is True
 
 
-def test_scopes_include_drive_metadata_readonly_for_docs_and_sheets_listing():
-    assert "https://www.googleapis.com/auth/drive.metadata.readonly" in auth.SCOPES
+def test_scopes_include_drive_for_full_file_access():
+    assert "https://www.googleapis.com/auth/drive" in auth.SCOPES
+    assert "https://www.googleapis.com/auth/gmail.modify" in auth.SCOPES
+    assert "https://www.googleapis.com/auth/contacts" in auth.SCOPES

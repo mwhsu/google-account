@@ -1,6 +1,6 @@
 import pytest
 
-from src import sheets_api
+from src import drive_api, sheets_api
 from src.config import AppConfig
 
 
@@ -83,14 +83,12 @@ class FakeDriveService:
 def test_list_sheets_returns_sheet_models(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     files = FakeFiles({"files": [{"id": "sheet-1", "name": "Budget", "modifiedTime": "2026-03-01T00:00:00Z"}]})
-    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(
-        sheets_api,
-        "build",
-        lambda service, *_args, **_kwargs: FakeDriveService(files)
-        if service == "drive"
-        else FakeSheetsService(FakeSpreadsheets(FakeValues())),
-    )
+    fake_creds = object()
+    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeSheetsService(FakeSpreadsheets(FakeValues()))
+    monkeypatch.setattr(sheets_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     result = sheets_api.list_sheets("personal", config, 5)
 
@@ -133,14 +131,12 @@ def test_read_sheet_respects_max_sheet_cells_limit(tmp_path, monkeypatch):
 def test_search_sheets_passes_query_to_drive_api(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     files = FakeFiles({"files": []})
-    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(
-        sheets_api,
-        "build",
-        lambda service, *_args, **_kwargs: FakeDriveService(files)
-        if service == "drive"
-        else FakeSheetsService(FakeSpreadsheets(FakeValues())),
-    )
+    fake_creds = object()
+    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeSheetsService(FakeSpreadsheets(FakeValues()))
+    monkeypatch.setattr(sheets_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     sheets_api.search_sheets("personal", config, "Budget", 10)
 
@@ -150,14 +146,12 @@ def test_search_sheets_passes_query_to_drive_api(tmp_path, monkeypatch):
 def test_search_sheets_escapes_single_quotes_for_drive_query(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     files = FakeFiles({"files": []})
-    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(
-        sheets_api,
-        "build",
-        lambda service, *_args, **_kwargs: FakeDriveService(files)
-        if service == "drive"
-        else FakeSheetsService(FakeSpreadsheets(FakeValues())),
-    )
+    fake_creds = object()
+    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeSheetsService(FakeSpreadsheets(FakeValues()))
+    monkeypatch.setattr(sheets_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     sheets_api.search_sheets("personal", config, "Mike's Budget", 10)
 
@@ -214,6 +208,62 @@ def test_mutation_failure_is_audit_logged(tmp_path, monkeypatch):
     assert '"status":"error"' in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
+class PaginatedFakeFiles:
+    """FakeFiles that returns different pages on successive list() calls."""
+
+    def __init__(self, pages):
+        self.pages = pages
+        self.call_index = 0
+        self.calls = []
+
+    def list(self, **kwargs):
+        self.calls.append(kwargs)
+        page = self.pages[self.call_index]
+        self.call_index += 1
+        return ExecuteWrapper(page)
+
+
+def test_list_sheets_paginates_across_pages(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    pages = [
+        {"files": [{"id": "s-1", "name": "Budget", "modifiedTime": "2026-03-01T00:00:00Z"}], "nextPageToken": "tok2"},
+        {"files": [{"id": "s-2", "name": "Expenses", "modifiedTime": "2026-03-01T00:00:00Z"}]},
+    ]
+    files = PaginatedFakeFiles(pages)
+    fake_creds = object()
+    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeSheetsService(FakeSpreadsheets(FakeValues()))
+    monkeypatch.setattr(sheets_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
+
+    result = sheets_api.list_sheets("personal", config, 10)
+
+    assert len(result) == 2
+    assert result[0].title == "Budget"
+    assert result[1].title == "Expenses"
+    assert files.calls[1]["pageToken"] == "tok2"
+
+
+def test_list_sheets_stops_at_limit(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    pages = [
+        {"files": [{"id": "s-1", "name": "A", "modifiedTime": ""}, {"id": "s-2", "name": "B", "modifiedTime": ""}], "nextPageToken": "tok2"},
+    ]
+    files = PaginatedFakeFiles(pages)
+    fake_creds = object()
+    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    fake_build = lambda service, *_args, **_kwargs: FakeDriveService(files) if service == "drive" else FakeSheetsService(FakeSpreadsheets(FakeValues()))
+    monkeypatch.setattr(sheets_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
+
+    result = sheets_api.list_sheets("personal", config, 1)
+
+    assert len(result) == 1
+    assert len(files.calls) == 1
+
+
 def test_all_functions_use_mocked_google_api_client(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     calls = []
@@ -224,8 +274,11 @@ def test_all_functions_use_mocked_google_api_client(tmp_path, monkeypatch):
             return FakeDriveService(FakeFiles({"files": []}))
         return FakeSheetsService(FakeSpreadsheets(FakeValues()))
 
-    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: object())
+    fake_creds = object()
+    monkeypatch.setattr(sheets_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
+    monkeypatch.setattr(drive_api, "get_credentials", lambda *_args, **_kwargs: fake_creds)
     monkeypatch.setattr(sheets_api, "build", fake_build)
+    monkeypatch.setattr(drive_api, "build", fake_build)
 
     sheets_api.search_sheets("personal", config, "Budget", 10)
 

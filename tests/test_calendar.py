@@ -209,50 +209,60 @@ def test_all_functions_use_mocked_google_api_client(tmp_path, monkeypatch):
     assert calls[0][0][:2] == ("calendar", "v3")
 
 
-def test_get_free_busy_queries_multiple_accounts_in_one_request(tmp_path, monkeypatch):
+class PaginatedFakeEvents:
+    """FakeEvents that returns different pages on successive list() calls."""
+
+    def __init__(self, pages):
+        self.pages = pages
+        self.call_index = 0
+        self.calls = []
+
+    def list(self, **kwargs):
+        self.calls.append(("list", kwargs))
+        page = self.pages[self.call_index]
+        self.call_index += 1
+        return ExecuteWrapper(page)
+
+
+def test_get_upcoming_paginates_across_pages(tmp_path, monkeypatch):
     config = make_config(tmp_path)
-    freebusy = FakeFreeBusy(
-        {
-            "calendars": {
-                "primary": {
-                    "busy": [{"start": "2026-03-07T10:00:00+00:00", "end": "2026-03-07T11:00:00+00:00"}]
-                },
-                "family@example.com": {
-                    "busy": [{"start": "2026-03-07T12:00:00+00:00", "end": "2026-03-07T13:30:00+00:00"}]
-                },
-            }
-        }
-    )
+    pages = [
+        {"items": [event_payload()], "nextPageToken": "tok2"},
+        {"items": [{**event_payload(), "id": "evt-2", "summary": "Lunch"}]},
+    ]
+    events = PaginatedFakeEvents(pages)
     monkeypatch.setattr(calendar_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(calendar_api, "build", lambda *_args, **_kwargs: FakeService(FakeEvents([]), freebusy=freebusy))
+    monkeypatch.setattr(calendar_api, "build", lambda *_args, **_kwargs: FakeService(events))
 
-    result = calendar_api.get_free_busy(["personal", "family"], config, "2026-03-07")
+    result = calendar_api.get_upcoming("personal", config, 7)
 
-    assert [item["id"] for item in freebusy.calls[0][1]["body"]["items"]] == ["primary", "family@example.com"]
-    assert len(result.accounts) == 2
-    assert len(result.merged_busy) == 2
-    assert result.merged_free[0].start == "2026-03-07T00:00:00+00:00"
+    assert len(result) == 2
+    assert result[0].summary == "Meeting"
+    assert result[1].summary == "Lunch"
+    assert events.calls[1][1]["pageToken"] == "tok2"
 
 
-def test_get_overlap_returns_common_free_windows_with_minimum_duration(tmp_path, monkeypatch):
+def test_search_events_paginates_across_pages(tmp_path, monkeypatch):
     config = make_config(tmp_path)
-    freebusy = FakeFreeBusy(
-        {
-            "calendars": {
-                "primary": {
-                    "busy": [{"start": "2026-03-07T09:00:00+00:00", "end": "2026-03-07T10:00:00+00:00"}]
-                },
-                "family@example.com": {
-                    "busy": [{"start": "2026-03-07T10:30:00+00:00", "end": "2026-03-07T11:00:00+00:00"}]
-                },
-            }
-        }
-    )
+    evt1 = event_payload()
+    evt2 = {**event_payload(), "id": "evt-2", "summary": "Standup"}
+    pages = [
+        {"items": [evt1], "nextPageToken": "tok2"},
+        {"items": [evt2]},
+    ]
+    events = PaginatedFakeEvents(pages)
     monkeypatch.setattr(calendar_api, "get_credentials", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(calendar_api, "build", lambda *_args, **_kwargs: FakeService(FakeEvents([]), freebusy=freebusy))
+    monkeypatch.setattr(calendar_api, "build", lambda *_args, **_kwargs: FakeService(events))
 
-    result = calendar_api.get_overlap(["personal", "family"], config, "2026-03-07", 45)
+    result = calendar_api.search_events("personal", config, "meeting", 7)
 
-    assert result.min_duration_minutes == 45
-    assert result.windows[0].start == "2026-03-07T00:00:00+00:00"
-    assert result.windows[1].start == "2026-03-07T11:00:00+00:00"
+    assert len(result) == 2
+    assert result[0].summary == "Meeting"
+    assert result[1].summary == "Standup"
+    assert events.calls[1][1]["pageToken"] == "tok2"
+
+
+def test_free_busy_and_overlap_removed():
+    """Verify free-busy and overlap functions are no longer available."""
+    assert not hasattr(calendar_api, "get_free_busy")
+    assert not hasattr(calendar_api, "get_overlap")

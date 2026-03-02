@@ -15,6 +15,7 @@ CLI: `uv run --project ${CLAUDE_PLUGIN_ROOT} google sheets <command> --account <
 | `search <query>` | Run `search --account <alias> "<query>"`. Search sheets. |
 | `create --title T` | Run `create --account <alias> --title "T"`. Create spreadsheet. |
 | `update <id> --range A1:B2 --values '[[...]]'` | Run `update --account <alias> <id> --range "A1:B2" --values '...'`. Update cells. |
+| `delete <id>` | Run `delete --account <alias> <id>`. Move sheet to trash. |
 
 If the user doesn't specify an account, ask which account to use.
 

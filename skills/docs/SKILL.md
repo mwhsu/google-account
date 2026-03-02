@@ -16,6 +16,7 @@ CLI: `uv run --project ${CLAUDE_PLUGIN_ROOT} google docs <command> --account <al
 | `create --account <alias> --title "T" [--content "C"]` | User wants to create a new doc |
 | `update --account <alias> <doc-id> --replace "C"` | User wants to replace doc content |
 | `update --account <alias> <doc-id> --append "C"` | User wants to append to a doc |
+| `delete --account <alias> <doc-id>` | User wants to delete a doc (moves to trash) |
 
 Check available accounts: `uv run --project ${CLAUDE_PLUGIN_ROOT} google auth list`
 

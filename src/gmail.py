@@ -11,7 +11,8 @@ except ImportError:  # pragma: no cover - exercised only in dependency-light tes
 from src.audit import log_mutation
 from src.auth import get_credentials
 from src.config import AppConfig
-from src.models import EmailMessage, EmailThread, Label
+from src.models import DraftInfo, EmailMessage, EmailThread, Label
+from src.pagination import paginate
 from src.sanitizer import sanitize
 
 
@@ -76,17 +77,22 @@ def _to_email_message(message: dict, config: AppConfig) -> EmailMessage:
 def get_inbox(account: str, config: AppConfig, unread: bool, limit: int) -> list[EmailMessage]:
     service = _gmail_service(account, config)
     query = "is:unread" if unread else None
-    response = (
-        service.users()
-        .messages()
-        .list(userId="me", labelIds=["INBOX"], q=query, maxResults=limit)
-        .execute()
-    )
-    messages = []
-    for item in response.get("messages", []):
-        message = service.users().messages().get(userId="me", id=item["id"], format="full").execute()
-        messages.append(_to_email_message(message, config))
-    return messages
+
+    def fetch_page(token):
+        response = (
+            service.users()
+            .messages()
+            .list(userId="me", labelIds=["INBOX"], q=query, maxResults=min(limit, 100), pageToken=token)
+            .execute()
+        )
+        items = []
+        for item in response.get("messages", []):
+            message = service.users().messages().get(userId="me", id=item["id"], format="full").execute()
+            items.append(_to_email_message(message, config))
+        return items, response.get("nextPageToken")
+
+    items, _ = paginate(fetch_page, limit)
+    return items
 
 
 def read_message(account: str, config: AppConfig, message_id: str) -> EmailMessage:
@@ -97,12 +103,22 @@ def read_message(account: str, config: AppConfig, message_id: str) -> EmailMessa
 
 def search_messages(account: str, config: AppConfig, query: str, limit: int) -> list[EmailMessage]:
     service = _gmail_service(account, config)
-    response = service.users().messages().list(userId="me", q=query, maxResults=limit).execute()
-    messages = []
-    for item in response.get("messages", []):
-        message = service.users().messages().get(userId="me", id=item["id"], format="full").execute()
-        messages.append(_to_email_message(message, config))
-    return messages
+
+    def fetch_page(token):
+        response = (
+            service.users()
+            .messages()
+            .list(userId="me", q=query, maxResults=min(limit, 100), pageToken=token)
+            .execute()
+        )
+        items = []
+        for item in response.get("messages", []):
+            message = service.users().messages().get(userId="me", id=item["id"], format="full").execute()
+            items.append(_to_email_message(message, config))
+        return items, response.get("nextPageToken")
+
+    items, _ = paginate(fetch_page, limit)
+    return items
 
 
 def get_thread(account: str, config: AppConfig, thread_id: str) -> EmailThread:
@@ -119,17 +135,31 @@ def get_labels(account: str, config: AppConfig) -> list[Label]:
     return [Label.model_validate(label) for label in response.get("labels", [])]
 
 
-def create_draft(account: str, config: AppConfig, to: str, subject: str, body: str) -> tuple[str, str]:
+def create_draft(
+    account: str,
+    config: AppConfig,
+    to: str,
+    subject: str,
+    body: str,
+    thread_id: str | None = None,
+    in_reply_to: str | None = None,
+) -> tuple[str, str]:
     service = _gmail_service(account, config)
     message = MIMEText(body)
     message["to"] = to
     message["subject"] = subject
+    if in_reply_to:
+        message["In-Reply-To"] = in_reply_to
+        message["References"] = in_reply_to
     encoded = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+    draft_body: dict = {"message": {"raw": encoded}}
+    if thread_id:
+        draft_body["message"]["threadId"] = thread_id
     try:
         response = (
             service.users()
             .drafts()
-            .create(userId="me", body={"message": {"raw": encoded}})
+            .create(userId="me", body=draft_body)
             .execute()
         )
     except Exception as exc:
@@ -142,6 +172,7 @@ def create_draft(account: str, config: AppConfig, to: str, subject: str, body: s
             f"Create draft for {to}",
             config,
             error=str(exc),
+            params={"to": to, "subject": subject},
         )
         raise click.ClickException(f"Failed to create draft | audit: {request_id}") from exc
     draft_id = response["id"]
@@ -153,14 +184,120 @@ def create_draft(account: str, config: AppConfig, to: str, subject: str, body: s
         "success",
         f"Create draft for {to}",
         config,
+        params={"to": to, "subject": subject},
     )
     return draft_id, request_id
 
 
-def list_drafts(account: str, config: AppConfig, limit: int) -> list[dict]:
+def delete_draft(account: str, config: AppConfig, draft_id: str) -> tuple[str, str]:
     service = _gmail_service(account, config)
-    response = service.users().drafts().list(userId="me", maxResults=limit).execute()
-    drafts = []
-    for draft in response.get("drafts", []):
-        drafts.append({"id": draft["id"], "message_id": draft.get("message", {}).get("id", "")})
-    return drafts
+    try:
+        service.users().drafts().delete(userId="me", id=draft_id).execute()
+    except Exception as exc:
+        request_id = log_mutation(
+            "gmail.delete_draft",
+            account,
+            "draft",
+            draft_id,
+            "error",
+            f"Delete draft {draft_id}",
+            config,
+            error=str(exc),
+            params={"draft_id": draft_id},
+        )
+        raise click.ClickException(f"Failed to delete draft | audit: {request_id}") from exc
+    request_id = log_mutation(
+        "gmail.delete_draft",
+        account,
+        "draft",
+        draft_id,
+        "success",
+        f"Delete draft {draft_id}",
+        config,
+        params={"draft_id": draft_id},
+    )
+    return draft_id, request_id
+
+
+def archive_message(account: str, config: AppConfig, message_id: str) -> tuple[str, str]:
+    return modify_labels(account, config, message_id, remove_labels=["INBOX"])
+
+
+def modify_labels(
+    account: str,
+    config: AppConfig,
+    message_id: str,
+    add_labels: list[str] | None = None,
+    remove_labels: list[str] | None = None,
+) -> tuple[str, str]:
+    service = _gmail_service(account, config)
+    body: dict = {}
+    if add_labels:
+        body["addLabelIds"] = add_labels
+    if remove_labels:
+        body["removeLabelIds"] = remove_labels
+    try:
+        service.users().messages().modify(userId="me", id=message_id, body=body).execute()
+    except Exception as exc:
+        request_id = log_mutation(
+            "gmail.modify_labels",
+            account,
+            "message",
+            message_id,
+            "error",
+            f"Modify labels on {message_id}",
+            config,
+            error=str(exc),
+            params={"message_id": message_id},
+        )
+        raise click.ClickException(f"Failed to modify labels | audit: {request_id}") from exc
+    request_id = log_mutation(
+        "gmail.modify_labels",
+        account,
+        "message",
+        message_id,
+        "success",
+        f"Modify labels on {message_id}",
+        config,
+        params={"message_id": message_id},
+    )
+    return message_id, request_id
+
+
+def mark_read(account: str, config: AppConfig, message_id: str) -> tuple[str, str]:
+    return modify_labels(account, config, message_id, remove_labels=["UNREAD"])
+
+
+def mark_unread(account: str, config: AppConfig, message_id: str) -> tuple[str, str]:
+    return modify_labels(account, config, message_id, add_labels=["UNREAD"])
+
+
+def list_drafts(account: str, config: AppConfig, limit: int) -> list[DraftInfo]:
+    service = _gmail_service(account, config)
+
+    def fetch_page(token):
+        response = (
+            service.users()
+            .drafts()
+            .list(userId="me", maxResults=min(limit, 100), pageToken=token)
+            .execute()
+        )
+        raw_drafts = response.get("drafts", [])
+        items = []
+        for d in raw_drafts:
+            detail = service.users().drafts().get(
+                userId="me", id=d["id"], format="metadata",
+                metadataHeaders=["Subject", "To"],
+            ).execute()
+            message = detail.get("message", {})
+            headers = message.get("payload", {}).get("headers", [])
+            items.append(DraftInfo(
+                id=detail["id"],
+                message_id=message.get("id", ""),
+                subject=_header(headers, "Subject"),
+                to=_header(headers, "To"),
+            ))
+        return items, response.get("nextPageToken")
+
+    items, _ = paginate(fetch_page, limit)
+    return items

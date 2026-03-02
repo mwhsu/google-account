@@ -194,19 +194,104 @@ def test_calendar_create_accepts_calendar_alias(monkeypatch):
     assert seen["calendar"] == "family"
 
 
-def test_calendar_free_busy_parses_accounts_list(monkeypatch):
+def test_free_busy_command_removed():
     runner = CliRunner()
-    monkeypatch.setattr(cli_module, "load_config", lambda: object())
-    monkeypatch.setattr(
-        cli_module.calendar_api,
-        "get_free_busy",
-        lambda accounts, _config, target_date: {"accounts": accounts, "date": target_date},
-    )
+    result = runner.invoke(cli_module.cli, ["calendar", "free-busy", "--help"])
+    assert result.exit_code != 0
 
-    result = runner.invoke(
-        cli_module.cli,
-        ["calendar", "free-busy", "--accounts", "michael,elaine", "--date", "2026-03-07", "--json"],
-    )
+
+def test_drive_help_shows_subcommands():
+    runner = CliRunner()
+
+    result = runner.invoke(cli_module.cli, ["drive", "--help"])
 
     assert result.exit_code == 0
-    assert json.loads(result.output) == {"accounts": ["michael", "elaine"], "date": "2026-03-07"}
+    for cmd in ["list", "search", "get", "download", "upload", "create-folder",
+                "move", "rename", "trash", "delete", "share", "permissions"]:
+        assert cmd in result.output
+
+
+def test_help_shows_drive_group():
+    runner = CliRunner()
+    result = runner.invoke(cli_module.cli, ["--help"])
+    assert "drive" in result.output
+
+
+def test_docs_delete_delegates_to_drive_trash(monkeypatch):
+    runner = CliRunner()
+    seen = {}
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        cli_module.drive_api,
+        "trash_file",
+        lambda account, config, file_id: (seen.update({"account": account, "file_id": file_id}) or ("doc-1", "req_123")),
+    )
+
+    result = runner.invoke(cli_module.cli, ["docs", "delete", "--account", "personal", "doc-1"])
+
+    assert result.exit_code == 0
+    assert seen["file_id"] == "doc-1"
+    assert "trashed doc" in result.output
+
+
+def test_sheets_delete_delegates_to_drive_trash(monkeypatch):
+    runner = CliRunner()
+    seen = {}
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        cli_module.drive_api,
+        "trash_file",
+        lambda account, config, file_id: (seen.update({"account": account, "file_id": file_id}) or ("sheet-1", "req_456")),
+    )
+
+    result = runner.invoke(cli_module.cli, ["sheets", "delete", "--account", "personal", "sheet-1"])
+
+    assert result.exit_code == 0
+    assert seen["file_id"] == "sheet-1"
+    assert "trashed sheet" in result.output
+
+
+def test_docs_help_shows_delete():
+    runner = CliRunner()
+    result = runner.invoke(cli_module.cli, ["docs", "--help"])
+    assert "delete" in result.output
+
+
+def test_sheets_help_shows_delete():
+    runner = CliRunner()
+    result = runner.invoke(cli_module.cli, ["sheets", "--help"])
+    assert "delete" in result.output
+
+
+def test_contacts_help_shows_subcommands():
+    runner = CliRunner()
+
+    result = runner.invoke(cli_module.cli, ["contacts", "--help"])
+
+    assert result.exit_code == 0
+    for cmd in ["list", "search", "get", "create", "update", "delete"]:
+        assert cmd in result.output
+
+
+def test_help_shows_contacts_group():
+    runner = CliRunner()
+    result = runner.invoke(cli_module.cli, ["--help"])
+    assert "contacts" in result.output
+
+
+def test_gmail_help_shows_new_commands():
+    runner = CliRunner()
+    result = runner.invoke(cli_module.cli, ["gmail", "--help"])
+    assert result.exit_code == 0
+    for cmd in ["delete-draft", "archive", "label", "mark-read", "mark-unread"]:
+        assert cmd in result.output
+
+
+def test_gmail_label_requires_add_or_remove(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(cli_module, "load_config", lambda: object())
+
+    result = runner.invoke(cli_module.cli, ["gmail", "label", "--account", "personal", "msg-1"])
+
+    assert result.exit_code != 0
+    assert "Specify at least one --add or --remove" in result.output

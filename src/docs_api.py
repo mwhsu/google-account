@@ -8,7 +8,9 @@ except ImportError:  # pragma: no cover - exercised only in dependency-light tes
 from src.audit import log_mutation
 from src.auth import get_credentials
 from src.config import AppConfig
+from src.drive_api import _drive_service, _escape_drive_query_literal
 from src.models import DocContent, DocInfo
+from src.pagination import paginate
 from src.sanitizer import sanitize
 
 
@@ -21,21 +23,11 @@ def _docs_service(account: str, config: AppConfig):
     return build("docs", "v1", credentials=get_credentials(account, config))
 
 
-def _drive_service(account: str, config: AppConfig):
-    if build is None:
-        raise click.ClickException("google-api-python-client is not installed")
-    return build("drive", "v3", credentials=get_credentials(account, config))
-
-
 def _drive_doc_query(extra_query: str | None = None) -> str:
     query = f"mimeType='{DOC_MIME_TYPE}' and trashed=false"
     if extra_query:
         query = f"{query} and ({extra_query})"
     return query
-
-
-def _escape_drive_query_literal(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
 def _file_to_doc_info(file_data: dict) -> DocInfo:
@@ -91,17 +83,24 @@ def _document_to_model(document: dict, config: AppConfig) -> DocContent:
 
 def list_docs(account: str, config: AppConfig, limit: int) -> list[DocInfo]:
     service = _drive_service(account, config)
-    response = (
-        service.files()
-        .list(
-            q=_drive_doc_query(),
-            pageSize=limit,
-            orderBy="modifiedTime desc",
-            fields="files(id,name,modifiedTime)",
+
+    def fetch_page(token):
+        response = (
+            service.files()
+            .list(
+                q=_drive_doc_query(),
+                pageSize=min(limit, 100),
+                pageToken=token,
+                orderBy="modifiedTime desc",
+                fields="files(id,name,modifiedTime),nextPageToken",
+            )
+            .execute()
         )
-        .execute()
-    )
-    return [_file_to_doc_info(file_data) for file_data in response.get("files", [])]
+        items = [_file_to_doc_info(f) for f in response.get("files", [])]
+        return items, response.get("nextPageToken")
+
+    items, _ = paginate(fetch_page, limit)
+    return items
 
 
 def read_doc(account: str, config: AppConfig, doc_id: str) -> DocContent:
@@ -112,17 +111,25 @@ def read_doc(account: str, config: AppConfig, doc_id: str) -> DocContent:
 
 def search_docs(account: str, config: AppConfig, query: str, limit: int) -> list[DocInfo]:
     service = _drive_service(account, config)
-    response = (
-        service.files()
-        .list(
-            q=_drive_doc_query(f"name contains '{_escape_drive_query_literal(query)}'"),
-            pageSize=limit,
-            orderBy="modifiedTime desc",
-            fields="files(id,name,modifiedTime)",
+    q = _drive_doc_query(f"name contains '{_escape_drive_query_literal(query)}'")
+
+    def fetch_page(token):
+        response = (
+            service.files()
+            .list(
+                q=q,
+                pageSize=min(limit, 100),
+                pageToken=token,
+                orderBy="modifiedTime desc",
+                fields="files(id,name,modifiedTime),nextPageToken",
+            )
+            .execute()
         )
-        .execute()
-    )
-    return [_file_to_doc_info(file_data) for file_data in response.get("files", [])]
+        items = [_file_to_doc_info(f) for f in response.get("files", [])]
+        return items, response.get("nextPageToken")
+
+    items, _ = paginate(fetch_page, limit)
+    return items
 
 
 def create_doc(account: str, config: AppConfig, title: str, content: str) -> tuple[str, str]:
@@ -144,6 +151,7 @@ def create_doc(account: str, config: AppConfig, title: str, content: str) -> tup
             f"Create doc {title}",
             config,
             error=str(exc),
+            params={"title": title},
         )
         raise click.ClickException(f"Failed to create doc | audit: {request_id}") from exc
     doc_id = document["documentId"]
@@ -155,6 +163,7 @@ def create_doc(account: str, config: AppConfig, title: str, content: str) -> tup
         "success",
         f"Create doc {title}",
         config,
+        params={"title": title},
     )
     return doc_id, request_id
 
@@ -198,6 +207,7 @@ def update_doc(
             f"Update doc {doc_id} ({mode})",
             config,
             error=str(exc),
+            params={"doc_id": doc_id, "mode": mode},
         )
         raise click.ClickException(f"Failed to update doc | audit: {request_id}") from exc
     request_id = log_mutation(
@@ -208,5 +218,6 @@ def update_doc(
         "success",
         f"Update doc {doc_id} ({mode})",
         config,
+        params={"doc_id": doc_id, "mode": mode},
     )
     return doc_id, request_id
