@@ -82,7 +82,15 @@ def get_credentials(alias: str, config: AppConfig):
         raise click.ClickException(f"Account '{alias}' is not logged in")
     credentials = Credentials.from_authorized_user_file(str(token_path), SCOPES)
     if credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
+        try:
+            credentials.refresh(Request())
+        except Exception as exc:
+            if "invalid_scope" in str(exc).lower() or "scope" in str(exc).lower():
+                raise click.ClickException(
+                    f"Account '{alias}' token has outdated scopes. "
+                    f"Re-run: google auth login {alias}"
+                ) from exc
+            raise
         token_path.write_text(credentials.to_json(), encoding="utf-8")
     _check_scope_mismatch(credentials, alias)
     return credentials

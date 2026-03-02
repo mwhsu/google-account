@@ -287,7 +287,6 @@ def list_drafts(account: str, config: AppConfig, limit: int) -> list[DraftInfo]:
         for d in raw_drafts:
             detail = service.users().drafts().get(
                 userId="me", id=d["id"], format="metadata",
-                metadataHeaders=["Subject", "To"],
             ).execute()
             message = detail.get("message", {})
             headers = message.get("payload", {}).get("headers", [])
